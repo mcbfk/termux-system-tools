@@ -3,159 +3,377 @@ import subprocess
 import speedtest
 import qrcode
 import platform
+import json
+import signal
+import sys
 from datetime import datetime
 
-def system_info():
-    print("\n[+] Informações do Sistema Termux")
-    print(f"Data/Hora: {datetime.now().strftime('%d/%m/%Y %H:%M:%S')}")
-    print(f"Sistema: {platform.system()} {platform.release()}")
+class TermuxUtilities:
+    def __init__(self):
+        self.version = "1.0.0"
+        self.running = True
+        
+    def signal_handler(self, sig, frame):
+        """Handler para Ctrl+C"""
+        print("\n\n❌ Operação interrompida pelo usuário")
+        self.return_to_menu()
+        
+    def setup_signal_handler(self):
+        """Configura o handler para Ctrl+C"""
+        signal.signal(signal.SIGINT, self.signal_handler)
+        
+    def clear_screen(self):
+        os.system('clear' if os.name == 'posix' else 'cls')
     
-    # Informações de CPU alternativas
-    try:
-        # Tenta obter informações da CPU via comandos do Termux
-        cpu_info = subprocess.check_output(["cat", "/proc/cpuinfo"], text=True, stderr=subprocess.DEVNULL)
-        cores = cpu_info.count("processor")
-        print(f"CPUs: {cores} núcleos")
-    except:
-        print("CPUs: Informação não disponível")
+    def print_banner(self):
+        banner = """
+╔═══════════════════════════════════════╗
+║          TERMUX UTILITIES             ║
+║         Professional Suite            ║
+╚═══════════════════════════════════════╝
+        """
+        print(banner)
     
-    # Informações de memória via comandos do Termux
-    try:
-        mem_info = subprocess.check_output(["free", "-m"], text=True)
-        lines = mem_info.split('\n')
-        if len(lines) > 1:
-            mem_data = lines[1].split()
-            total_mem = int(mem_data[1])
-            used_mem = int(mem_data[2])
-            if total_mem > 0:
-                mem_percent = (used_mem / total_mem) * 100
-                print(f"Memória: {mem_percent:.1f}% usado ({used_mem}MB / {total_mem}MB)")
-    except:
-        print("Memória: Informação não disponível")
-    
-    # Informações de armazenamento
-    try:
-        disk_info = subprocess.check_output(["df", "/data/data/com.termux/files/home", "-h"], text=True)
-        lines = disk_info.split('\n')
-        if len(lines) > 1:
-            disk_data = lines[1].split()
-            if len(disk_data) >= 5:
-                print(f"Armazenamento: {disk_data[4]} usado ({disk_data[2]} / {disk_data[1]})")
-    except:
+    def wait_for_quit(self, timeout_seconds=60):
+        """Espera o usuário pressionar 'q' para voltar ao menu"""
+        print("\n" + "⎯" * 50)
+        print(f"🚪 Aperte 'q' e depois ENTER para voltar ao menu principal")
+        print(f"⏰ Ou aguarde {timeout_seconds} segundos para voltar automaticamente...")
+        
         try:
-            # Fallback para psutil se disponível
-            import psutil
-            disk = psutil.disk_usage('/')
-            print(f"Armazenamento: {disk.percent}% usado ({disk.used // (1024**3)}GB / {disk.total // (1024**3)}GB)")
+            # Timeout personalizado
+            import select
+            import sys
+            
+            i, o, e = select.select([sys.stdin], [], [], timeout_seconds)
+            if i:
+                user_input = sys.stdin.readline().strip().lower()
+                if user_input == 'q':
+                    return True
+            return True  # Volta automaticamente após o timeout
         except:
-            print("Armazenamento: Informação não disponível")
-    
-    # Informações da bateria
-    try:
-        battery_info = subprocess.check_output(["termux-battery-status"], text=True)
-        if "percentage" in battery_info:
-            import json
-            battery_data = json.loads(battery_info)
-            print(f"Bateria: {battery_data.get('percentage', 'N/A')}%")
-            print(f"Status: {battery_data.get('status', 'N/A')}")
-    except:
-        print("Bateria: Informação não disponível")
+            return True  # Fallback se houver erro
 
-def speed_test():
-    try:
-        print("\n[+] Testando velocidade da internet...")
-        st = speedtest.Speedtest()
-        st.get_best_server()
-        
-        print("Testando download...")
-        download = st.download() / 1024 / 1024
-        
-        print("Testando upload...")
-        upload = st.upload() / 1024 / 1024
-        
-        print(f"\nResultados:")
-        print(f"Download: {download:.2f} Mbps")
-        print(f"Upload: {upload:.2f} Mbps")
-        print(f"Ping: {st.results.ping:.2f} ms")
-        
-    except Exception as e:
-        print(f"Erro no teste de velocidade: {e}")
-        print("Verifique sua conexão com a internet")
-
-def generate_qr():
-    try:
-        text = input("\nDigite o texto/URL para o QR Code: ")
-        if not text.strip():
-            print("Texto vazio! Operação cancelada.")
-            return
-            
-        qr = qrcode.make(text)
-        filename = "qrcode_termux.png"
-        qr.save(filename)
-        print(f"QR Code salvo como '{filename}'")
-        
-        # Tenta abrir com app disponível
-        if os.path.exists(filename):
-            print("Tentando abrir o QR Code...")
-            os.system(f"termux-share {filename}")
-        else:
-            print("Erro: QR Code não foi gerado corretamente.")
-            
-    except Exception as e:
-        print(f"Erro ao gerar QR Code: {e}")
-
-def device_info():
-    print("\n[+] Informações do Dispositivo")
-    try:
-        # Modelo do dispositivo
-        model = subprocess.check_output(["getprop", "ro.product.model"], text=True).strip()
-        brand = subprocess.check_output(["getprop", "ro.product.brand"], text=True).strip()
-        android_version = subprocess.check_output(["getprop", "ro.build.version.release"], text=True).strip()
-        
-        print(f"Dispositivo: {brand} {model}")
-        print(f"Android: {android_version}")
-        
-        # Resolução da tela (se disponível)
+    def check_internet_connection(self):
+        """Verifica se há conexão com a internet"""
         try:
-            display_info = subprocess.check_output(["termux-wallpaper", "-h"], text=True, stderr=subprocess.DEVNULL)
-            print("Wallpaper: Suportado")
+            # Tenta fazer ping para o Google
+            result = subprocess.run(
+                ["ping", "-c", "1", "8.8.8.8"], 
+                capture_output=True, 
+                text=True, 
+                timeout=5
+            )
+            return result.returncode == 0
         except:
-            print("Wallpaper: Não suportado")
-            
-    except Exception as e:
-        print(f"Informações limitadas: {e}")
+            return False
 
-def main():
-    print("=" * 50)
-    print("      TERMUX SYSTEM UTILITIES")
-    print("=" * 50)
-    
-    while True:
-        print("\n--- Menu Principal ---")
-        print("1. Informações do Sistema")
-        print("2. Informações do Dispositivo")
-        print("3. Teste de Velocidade da Internet")
-        print("4. Gerar QR Code")
-        print("5. Sair")
+    def return_to_menu(self):
+        """Volta para o menu principal"""
+        self.running = True
+
+    def system_info(self):
+        print("\n📊 [INFORMAÇÕES DO SISTEMA]")
+        print("⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯")
+        print("💡 Aperte CTRL+C a qualquer momento para voltar ao menu")
+        print("⏰ Você tem 1 MINUTO para analisar as informações")
+        print("⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯")
         
-        choice = input("\nEscolha uma opção (1-5): ").strip()
+        try:
+            print(f"🕐 Data/Hora: {datetime.now().strftime('%d/%m/%Y %H:%M:%S')}")
+            print(f"⚙️  Sistema: {platform.system()} {platform.release()}")
+            
+            # Informações de CPU
+            try:
+                cpu_info = subprocess.check_output(["nproc"], text=True).strip()
+                print(f"🔧 CPUs: {cpu_info} núcleos")
+            except:
+                try:
+                    cpu_info = subprocess.check_output(["cat", "/proc/cpuinfo"], text=True)
+                    cores = cpu_info.count("processor")
+                    print(f"🔧 CPUs: {cores} núcleos")
+                except:
+                    print("🔧 CPUs: Informação não disponível")
+            
+            # Memória
+            try:
+                mem_info = subprocess.check_output(["free", "-m"], text=True)
+                lines = mem_info.split('\n')
+                if len(lines) > 1:
+                    mem_data = lines[1].split()
+                    total_mem = int(mem_data[1])
+                    used_mem = int(mem_data[2])
+                    if total_mem > 0:
+                        mem_percent = (used_mem / total_mem) * 100
+                        print(f"💾 Memória: {mem_percent:.1f}% usado ({used_mem}MB / {total_mem}MB)")
+            except:
+                print("💾 Memória: Informação não disponível")
+            
+            # Armazenamento
+            try:
+                disk_info = subprocess.check_output(["df", "/data/data/com.termux/files/home", "-h"], text=True)
+                lines = disk_info.split('\n')
+                if len(lines) > 1:
+                    disk_data = lines[1].split()
+                    if len(disk_data) >= 5:
+                        print(f"💽 Armazenamento: {disk_data[4]} usado ({disk_data[2]} / {disk_data[1]})")
+            except:
+                print("💽 Armazenamento: Informação não disponível")
+            
+            # Bateria
+            try:
+                battery_info = subprocess.check_output(["termux-battery-status"], text=True)
+                battery_data = json.loads(battery_info)
+                battery_level = battery_data.get('percentage', 'N/A')
+                status = battery_data.get('status', 'N/A')
+                status_emoji = "🔋" if status == "CHARGING" else "⚡" if status == "FULL" else "🔌"
+                print(f"{status_emoji} Bateria: {battery_level}% | Status: {status}")
+            except:
+                print("🔋 Bateria: Informação não disponível")
+            
+        except Exception as e:
+            print(f"❌ Erro ao obter informações: {e}")
         
-        if choice == "1":
-            system_info()
-        elif choice == "2":
-            device_info()
-        elif choice == "3":
-            speed_test()
-        elif choice == "4":
-            generate_qr()
-        elif choice == "5":
-            print("\nObrigado por usar Termux Utilities! 👋")
-            break
-        else:
-            print("Opção inválida! Tente novamente.")
+        return self.wait_for_quit(60)  # 60 SEGUNDOS
+
+    def speed_test(self):
+        print("\n🌐 [TESTE DE VELOCIDADE]")
+        print("⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯")
+        print("💡 Aperte CTRL+C a qualquer momento para cancelar e voltar ao menu")
+        print("⏰ Você tem 1 MINUTO para analisar os resultados")
+        print("⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯")
         
-        input("\nPressione Enter para continuar...")
+        # Primeiro verifica a conexão com a internet
+        print("🔍 Verificando conexão com a internet...")
+        if not self.check_internet_connection():
+            print("❌ Sem conexão com a internet!")
+            print("💡 Verifique sua conexão Wi-Fi ou dados móveis")
+            return self.wait_for_quit(60)
+        
+        print("✅ Conexão detectada. Iniciando teste de velocidade...")
+        
+        try:
+            print("⏳ Configurando teste...")
+            
+            # Cria instância do speedtest com timeout
+            st = speedtest.Speedtest()
+            st.timeout = 10  # Timeout de 10 segundos
+            
+            print("🌍 Procurando servidor mais próximo...")
+            st.get_best_server()
+            
+            print("📥 Testando velocidade de download...")
+            download = st.download() / 1024 / 1024  # Convertendo para Mbps
+            
+            print("📤 Testando velocidade de upload...")
+            upload = st.upload() / 1024 / 1024  # Convertendo para Mbps
+            
+            ping = st.results.ping
+            
+            print("\n📊 RESULTADOS:")
+            print("⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯")
+            print(f"📥 Download: {download:.2f} Mbps")
+            print(f"📤 Upload: {upload:.2f} Mbps")
+            print(f"🔄 Ping: {ping:.2f} ms")
+            
+            # Classificação da velocidade
+            if download > 100:
+                print("🚀 Velocidade: EXCELENTE")
+            elif download > 50:
+                print("✅ Velocidade: Muito Boa")
+            elif download > 25:
+                print("👍 Velocidade: Boa")
+            elif download > 10:
+                print("⚠️  Velocidade: Regular")
+            else:
+                print("🐢 Velocidade: Lenta")
+                
+            print("\n💡 Aperte 'q' + ENTER a qualquer momento para voltar ao menu")
+                
+        except speedtest.SpeedtestException as e:
+            print(f"❌ Erro no teste de velocidade: {str(e)}")
+            print("\n🔧 Soluções possíveis:")
+            print("• Verifique sua conexão com a internet")
+            print("• Tente novamente em alguns segundos")
+            print("• Verifique se o servidor speedtest está acessível")
+            
+        except KeyboardInterrupt:
+            print("\n❌ Teste cancelado pelo usuário")
+            return True
+            
+        except Exception as e:
+            print(f"❌ Erro inesperado: {e}")
+            print("💡 Tente novamente ou verifique sua conexão")
+        
+        return self.wait_for_quit(60)  # 60 SEGUNDOS
+
+    def generate_qr(self):
+        print("\n📱 [GERADOR DE QR CODE]")
+        print("⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯")
+        print("💡 Aperte CTRL+C a qualquer momento para cancelar e voltar ao menu")
+        print("⏰ Você tem 1 MINUTO após a geração do QR Code")
+        print("⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯")
+        
+        try:
+            text = input("Digite o texto/URL para o QR Code: ").strip()
+            
+            if not text:
+                print("❌ Texto vazio! Operação cancelada.")
+                return self.wait_for_quit(60)
+            
+            # Validação básica de URL
+            if not text.startswith(('http://', 'https://')):
+                if '.' in text and ' ' not in text:
+                    text = 'https://' + text
+            
+            print("⏳ Gerando QR Code...")
+            qr = qrcode.QRCode(
+                version=1,
+                error_correction=qrcode.constants.ERROR_CORRECT_L,
+                box_size=10,
+                border=4,
+            )
+            qr.add_data(text)
+            qr.make(fit=True)
+            
+            img = qr.make_image(fill_color="black", back_color="white")
+            filename = f"qrcode_{datetime.now().strftime('%H%M%S')}.png"
+            img.save(filename)
+            
+            print(f"✅ QR Code salvo como: {filename}")
+            print(f"📍 Conteúdo: {text[:50]}{'...' if len(text) > 50 else ''}")
+            
+            # Tentar abrir/compartilhar
+            if os.path.exists(filename):
+                try:
+                    subprocess.run(["termux-share", filename], check=False)
+                    print("📤 Abrindo opções de compartilhamento...")
+                except:
+                    print("💡 Use: 'termux-share' para compartilhar o arquivo manualmente")
+            else:
+                print("❌ Erro: QR Code não foi gerado corretamente.")
+                
+        except KeyboardInterrupt:
+            print("\n❌ Operação cancelada pelo usuário")
+            return True
+        except Exception as e:
+            print(f"❌ Erro ao gerar QR Code: {e}")
+        
+        return self.wait_for_quit(60)  # 60 SEGUNDOS
+
+    def device_info(self):
+        print("\n📱 [INFORMAÇÕES DO DISPOSITIVO]")
+        print("⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯")
+        print("💡 Aperte CTRL+C a qualquer momento para voltar ao menu")
+        print("⏰ Você tem 1 MINUTO para analisar as informações")
+        print("⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯")
+        
+        try:
+            # Informações básicas
+            model = subprocess.check_output(["getprop", "ro.product.model"], text=True).strip()
+            brand = subprocess.check_output(["getprop", "ro.product.brand"], text=True).strip()
+            android_version = subprocess.check_output(["getprop", "ro.build.version.release"], text=True).strip()
+            sdk_version = subprocess.check_output(["getprop", "ro.build.version.sdk"], text=True).strip()
+            
+            print(f"📱 Dispositivo: {brand} {model}")
+            print(f"🤖 Android: {android_version} (SDK: {sdk_version})")
+            
+            # Informações de rede
+            try:
+                wifi_info = subprocess.check_output(["termux-wifi-connectioninfo"], text=True, stderr=subprocess.DEVNULL)
+                wifi_data = json.loads(wifi_info)
+                ssid = wifi_data.get('ssid', 'Desconhecido')
+                print(f"📶 Wi-Fi: {ssid}")
+            except:
+                print("📶 Wi-Fi: Informação não disponível")
+                
+        except Exception as e:
+            print(f"❌ Erro ao obter informações: {e}")
+        
+        return self.wait_for_quit(60)  # 60 SEGUNDOS
+
+    def update_system(self):
+        print("\n🔄 [ATUALIZANDO SISTEMA]")
+        print("⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯")
+        print("💡 Aperte CTRL+C a qualquer momento para cancelar e voltar ao menu")
+        print("⏰ Você tem 1 MINUTO para ver o resultado da atualização")
+        print("⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯")
+        
+        try:
+            print("📦 Atualizando repositórios...")
+            subprocess.run(["pkg", "update"], check=True)
+            print("🔄 Atualizando pacotes...")
+            subprocess.run(["pkg", "upgrade", "-y"], check=True)
+            print("✅ Sistema atualizado com sucesso!")
+        except KeyboardInterrupt:
+            print("\n❌ Atualização cancelada pelo usuário")
+            return True
+        except Exception as e:
+            print(f"❌ Erro na atualização: {e}")
+        
+        return self.wait_for_quit(60)  # 60 SEGUNDOS
+
+    def show_menu(self):
+        menu = """
+🎯 MENU PRINCIPAL:
+
+1. 📊 Informações do Sistema
+2. 📱 Informações do Dispositivo  
+3. 🌐 Teste de Velocidade
+4. 📱 Gerar QR Code
+5. 🔄 Atualizar Sistema
+6. 🚪 Sair
+
+👉 Escolha uma opção (1-6):
+        """
+        print(menu)
+
+    def run(self):
+        self.setup_signal_handler()
+        
+        while self.running:
+            self.clear_screen()
+            self.print_banner()
+            self.show_menu()
+            
+            try:
+                choice = input().strip()
+                
+                if choice == "1":
+                    self.clear_screen()
+                    self.print_banner()
+                    self.system_info()
+                elif choice == "2":
+                    self.clear_screen()
+                    self.print_banner()
+                    self.device_info()
+                elif choice == "3":
+                    self.clear_screen()
+                    self.print_banner()
+                    self.speed_test()
+                elif choice == "4":
+                    self.clear_screen()
+                    self.print_banner()
+                    self.generate_qr()
+                elif choice == "5":
+                    self.clear_screen()
+                    self.print_banner()
+                    self.update_system()
+                elif choice == "6":
+                    print("\n👋 Obrigado por usar Termux Utilities!")
+                    print("🌟 Contribua no GitHub!")
+                    self.running = False
+                else:
+                    print("❌ Opção inválida! Tente novamente.")
+                    input("📋 Pressione ENTER para continuar...")
+                    
+            except KeyboardInterrupt:
+                print("\n\n👋 Obrigado por usar Termux Utilities!")
+                self.running = False
+            except Exception as e:
+                print(f"❌ Erro inesperado: {e}")
+                input("📋 Pressione ENTER para continuar...")
 
 if __name__ == "__main__":
-    main()
-EOF
+    app = TermuxUtilities()
+    app.run()
